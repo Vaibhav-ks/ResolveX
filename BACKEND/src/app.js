@@ -41,7 +41,7 @@ const allowedOrigins = [
     'http://localhost:5500',
     'http://127.0.0.1:3000',  // Add this
     'http://localhost:3000',
-    'https://vaibhav-ks.github.io/ResolveX/'
+    'https://vaibhav-ks.github.io/ResolveX'
 ];
 app.use(cors({
     origin: function (origin, callback) {
