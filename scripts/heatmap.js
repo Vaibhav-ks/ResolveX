@@ -1,3 +1,5 @@
+const BASE_URL = "http://localhost:3000"
+
 class HeatmapManager {
     constructor() {
         this.map = null;
@@ -38,7 +40,7 @@ class HeatmapManager {
 
     async fetchAndRenderComplaints(department = "all") {
         try {
-            const res = await fetch("http://localhost:3000/api/user_issues/locations");
+            const res = await fetch(`${BASE_URL}/api/user_issues/locations`);
             const data = await res.json();
 
             if (!data.success || !Array.isArray(data.data)) {
