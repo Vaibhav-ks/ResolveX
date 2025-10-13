@@ -41,7 +41,7 @@ const allowedOrigins = [
     'http://localhost:5500',
     'http://127.0.0.1:3000',  // Add this
     'http://localhost:3000',
-    `${process.env.CORS_ORIGIN}`
+    process.env.CORS_ORIGIN
 ];
 app.use(cors({
     origin: function (origin, callback) {
