@@ -25,7 +25,7 @@ const io = new Server(server, {
             'http://localhost:5500',
             'http://127.0.0.1:3000',
             'http://localhost:3000',
-            `${process.env.CORS_ORIGIN}`
+            'https://vaibhav-ks.github.io/ResolveX'
         ],
         methods: ['GET', 'POST'],
         credentials: true
