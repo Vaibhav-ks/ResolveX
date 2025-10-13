@@ -21,7 +21,11 @@ const server = createServer(app);
 const io = new Server(server, {
     cors: {
         origin: [
-            'https://vaibhav-ks.github.io/ResolveX'
+            'http://127.0.0.1:5500',
+            'http://localhost:5500',
+            'http://127.0.0.1:3000',
+            'http://localhost:3000',
+            'https://vaibhav-ks.github.io'
         ],
         methods: ['GET', 'POST'],
         credentials: true
@@ -33,7 +37,11 @@ const io = new Server(server, {
 global.io = io;
 
 const allowedOrigins = [
-    'https://vaibhav-ks.github.io/ResolveX'
+    'http://127.0.0.1:5500',
+    'http://localhost:5500',
+    'http://127.0.0.1:3000',  // Add this
+    'http://localhost:3000',
+    'https://vaibhav-ks.github.io'
 ];
 app.use(cors({
     origin: function (origin, callback) {
