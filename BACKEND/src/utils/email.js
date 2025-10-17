@@ -26,6 +26,9 @@ const transporter = nodemailer.createTransport({
  */
 export const sendEmail = async (to, subject, text, html) => {
   try {
+    console.log("🚀 BREVO_HOST:", process.env.BREVO_HOST);
+    console.log("🚀 BREVO_USER:", process.env.BREVO_USER);
+
     const info = await transporter.sendMail({
       from: process.env.BREVO_FROM,
       to,
