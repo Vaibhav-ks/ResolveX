@@ -1,75 +1,233 @@
+// import mongoose from "mongoose";
+
+// const userComplaintSchema = new mongoose.Schema({
+//   title: {
+//     type: String,
+//     required: true,
+//   },
+//   description: {
+//     type: String,
+//     required: true,
+//   },
+//   category: {
+//     type: String,
+//     enum: [
+//       "road",
+//       "water",
+//       "electricity",
+//       "sanitation",
+//       "security",
+//       "transport",
+//       "other",
+//     ],
+//     required: true,
+//   },
+//   status: {
+//     type: String,
+//     enum: ["pending", "in-progress", "resolved", "rejected"],
+//     default: "pending",
+//   },
+//   priority: {
+//     type: String,
+//     enum: ["low", "medium", "high", "critical"],
+//     default: "medium",
+//   },
+//   autoPriorityAssigned: {
+//     type: Boolean,
+//     default: false,
+//   },
+//   manualPriorityOverridden: {
+//     type: Boolean,
+//     default: false,
+//   },
+//   priorityOverriddenBy: {
+//     type: String,
+//     enum: ["admin", "staff"],
+//     default: null,
+//   },
+//   priorityOverriddenAt: {
+//     type: Date,
+//     default: null,
+//   },
+//   priorityOverriddenById: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     refPath: "priorityOverriddenByModel",
+//   },
+//   priorityOverriddenByModel: {
+//     type: String,
+//     enum: ["Admin", "Staff"],
+//     default: null,
+//   },
+//   location: {
+//     latitude: Number,
+//     longitude: Number,
+//     address: String,
+//   },
+//   images: [
+//     {
+//       type: String,
+//     },
+//   ],
+//   user: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: "User",
+//     required: true,
+//   },
+//   voteCount: {
+//     type: Number,
+//     default: 0,
+//   },
+//   voters: [
+//     {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: "User",
+//     },
+//   ],
+//   department: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: "Department",
+//   },
+//   assignedTo: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: "Staff",
+//   },
+//   comments: [
+//     {
+//       staff: {
+//         type: mongoose.Schema.Types.ObjectId,
+//         ref: "Staff",
+//       },
+//       message: String,
+//       createdAt: {
+//         type: Date,
+//         default: Date.now,
+//       },
+//     },
+//   ],
+//   createdAt: {
+//     type: Date,
+//     default: Date.now,
+//   },
+//   updatedAt: {
+//     type: Date,
+//     default: Date.now,
+//   },
+// });
+
+// export default mongoose.model("UserComplaint", userComplaintSchema);
+
+
 import mongoose from "mongoose";
 
-const userComplaintSchema=new mongoose.Schema({
-    title:{
-        type:String,
-        required:true
+const userComplaintSchema = new mongoose.Schema({
+  // 🚀 Strict Workspace Boundary
+  adminId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Admin",
+    required: true,
+    index: true // For fast querying on the Admin Dashboard
+  },
+  title: {
+    type: String,
+    required: true,
+  },
+  description: {
+    type: String,
+    required: true,
+  },
+  category: {
+    type: String,
+    required: true, 
+  },
+  status: {
+    type: String,
+    enum: ["pending", "in-progress", "resolved", "rejected"],
+    default: "pending",
+  },
+  priority: {
+    type: String,
+    enum: ["low", "medium", "high", "critical"],
+    default: "medium",
+  },
+  autoPriorityAssigned: {
+    type: Boolean,
+    default: false,
+  },
+  manualPriorityOverridden: {
+    type: Boolean,
+    default: false,
+  },
+  priorityOverriddenBy: {
+    type: String,
+    enum: ["admin", "staff"],
+    default: null,
+  },
+  priorityOverriddenAt: {
+    type: Date,
+    default: null,
+  },
+  priorityOverriddenById: {
+    type: mongoose.Schema.Types.ObjectId,
+    refPath: "priorityOverriddenByModel",
+  },
+  priorityOverriddenByModel: {
+    type: String,
+    enum: ["Admin", "Staff"],
+    default: null,
+  },
+  location: {
+    latitude: Number,
+    longitude: Number,
+    address: String,
+  },
+  images: [
+    {
+      type: String,
     },
-    description:{
-        type:String,
-        required:true
+  ],
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+  },
+  voteCount: {
+    type: Number,
+    default: 0,
+  },
+  voters: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
     },
-    category:{
-        type:String,
-        enum:["road","water","electricity","sanitation","other"],
-        required:true
+  ],
+  department: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Department",
+  },
+  assignedTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Staff", 
+  },
+  comments: [
+    {
+      staff: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Staff",
+      },
+      message: String,
+      createdAt: {
+        type: Date,
+        default: Date.now,
+      },
     },
-    status:{
-        type:String,
-        enum:["pending","in-progress","resolved","rejected"],
-        default:"pending"
-    },
-    priority:{
-        type:String,
-        enum:["low","medium","high"],
-        default:"medium"
-    },
-    location:{
-        latitude:Number,
-        longitude:Number,
-        address:String
-    },
-    images:[{
-        type: String
-    }],
-    user:{
-        type:mongoose.Schema.Types.ObjectId,
-        ref:"User",
-        required:true
-    },
-    voteCount: {
-        type: Number,
-        default: 0
-    },
-    department:{
-        type:mongoose.Schema.Types.ObjectId,
-        ref:"Department"
-    },
-    assignedTo:{
-        type:mongoose.Schema.Types.ObjectId,
-        ref:"Staff"
-    },
-    comments:[
-        {
-            staff:{
-                type:mongoose.Schema.Types.ObjectId,
-                ref:"Staff"
-            },
-            message:String,
-            createdAt:{
-                type:Date,
-                default:Date.now
-            }
-        }
-    ],
-    createdAt:{
-        type:Date,
-        default:Date.now
-    },
-    updatedAt:{
-        type:Date,
-        default:Date.now
-    }
-});
+  ],
+  // 🚀 NEW: Added to track exactly when a staff member finishes the job!
+  resolvedAt: {
+    type: Date,
+    default: null,
+  }
+}, { timestamps: true });
 
-export default mongoose.model("UserComplaint",userComplaintSchema);
+userComplaintSchema.index({"location.latitude":1,"location.longitude":1});
+
+export default mongoose.model("UserComplaint", userComplaintSchema);

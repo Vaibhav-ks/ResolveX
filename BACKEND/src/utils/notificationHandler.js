@@ -49,7 +49,7 @@ const getRecipientDetails = async (userId) => {
     }
 };
 
-const notificationRoutes = async (userId, type, message, subject) => {
+export const notificationRoutes = async (userId, type, message, subject) => {
     try {
         const details = await getRecipientDetails(userId);
         
@@ -91,4 +91,3 @@ const notificationRoutes = async (userId, type, message, subject) => {
     }
 };
 
-export default notificationRoutes;

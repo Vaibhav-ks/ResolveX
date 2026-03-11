@@ -1,43 +1,68 @@
-import express from "express";
+import express from 'express';
 import {
     sendMessage,
     getConversation,
     getAllConversations,
-    markMessagesAsRead,
+    getUnreadCount,
+    markAsRead,
     editMessage,
     deleteMessage,
-    searchMessages,
-    getUnreadCount
-} from "../controllers/chat.controllers.js";
-import { chatAuth } from "../middleware/chatAuth.js";
+    uploadChatFile,
+    sendTypingIndicator,
+    searchMessages
+} from '../controllers/chat.controllers.js';
+
+// 🚀 ADDED getActiveConversations HERE
+import { 
+    getComplaintMessages, 
+    sendComplaintMessage, 
+    getActiveConversations 
+} from '../controllers/complaint_chat.controllers.js';
+
+import { auth } from '../middleware/auth.js';
+import { staffAuth } from '../middleware/staffAuth.js';
+import { adminAuth } from '../middleware/adminAuth.js';
+import { chatAuth } from '../middleware/chatAuth.js'; 
+import multer from 'multer';
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
-// All chat routes require authentication
-router.use(chatAuth);
+// Send message (any authenticated user)
+router.post('/send', chatAuth, sendMessage);
 
-// Send a message
-router.post("/send", sendMessage);
+// Get conversation for a specific complaint
+router.get('/conversation/:complaintId', chatAuth, getConversation);
 
-// Get all conversations for logged-in user
-router.get("/conversations", getAllConversations);
-
-// Get conversation with specific user
-router.get("/conversation/:otherUserId", getConversation);
-
-// Mark conversation messages as read
-router.patch("/conversation/:conversationId/read", markMessagesAsRead);
-
-// Edit a message
-router.patch("/message/:messageId/edit", editMessage);
-
-// Delete a message
-router.delete("/message/:messageId/delete", deleteMessage);
-
-// Search messages
-router.get("/search", searchMessages);
+// Get all conversations for current user
+router.get('/conversations', chatAuth, getAllConversations);
 
 // Get unread message count
-router.get("/unread-count", getUnreadCount);
+router.get('/unread-count', chatAuth, getUnreadCount);
+
+// Mark messages as read
+router.patch('/conversation/:complaintId/read', chatAuth, markAsRead);
+
+// Edit message
+router.patch('/message/:messageId/edit', chatAuth, editMessage);
+
+// Delete message
+router.delete('/message/:messageId', chatAuth, deleteMessage);
+
+// Upload file in chat
+router.post('/upload', chatAuth, upload.single('file'), uploadChatFile);
+
+// Typing indicator
+router.post('/typing', chatAuth, sendTypingIndicator);
+
+// Search messages
+router.get('/search', chatAuth, searchMessages);
+
+// --- NEW: Our Optimized Live Ticket Chat Routes ---
+router.get('/complaint/:complaintId', chatAuth, getComplaintMessages);
+router.post('/complaint/:complaintId/send', chatAuth, sendComplaintMessage);
+
+// 🚀 ADDED THE INBOX ROUTE HERE
+router.get('/inbox', chatAuth, getActiveConversations);
 
 export default router;

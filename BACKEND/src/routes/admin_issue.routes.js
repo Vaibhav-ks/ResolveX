@@ -1,27 +1,33 @@
 import express from "express";
 import { 
-    handleFetchAllUserIssues, 
-    handleFetchStaffList,      
-    handleUpdateIssue,
-    handleGetComplaintDetails,
-    handleBulkAssign
-} from "../controllers/admin_issue.controllers.js"; 
-import {adminAuth} from "../middleware/adminAuth.js";
-
-import {
-  getComplaintChat,
-  sendComplaintChat
-} from "../controllers/admin_chat.controllers.js";
-
+  handleFetchAllUserIssues,
+  handleFetchStaffList,
+  handleUpdateIssue,
+  handleGetComplaintDetails,
+  handleBulkAssign,
+  getIssueStats
+} from "../controllers/admin_issue.controllers.js";
+import { adminAuth } from "../middleware/adminAuth.js";
+import { adminOverridePriority } from "../controllers/user_issue.controllers.js";
 const router = express.Router();
 
-router.get("/", adminAuth, handleFetchAllUserIssues); 
+// ✅ CRITICAL FIX: Stats route MUST be BEFORE /:id to avoid route collision
+router.get("/stats", adminAuth, getIssueStats);
 
-router.get("/staff", adminAuth, handleFetchStaffList); 
+// Get all complaints with filters
+router.get("/", adminAuth, handleFetchAllUserIssues);
 
+// Get staff list for assignment dropdowns
+router.get("/staff", adminAuth, handleFetchStaffList);
+
+// Get single complaint details
 router.get("/:id", adminAuth, handleGetComplaintDetails);
-router.put("/:id",adminAuth,handleUpdateIssue);
-router.post("/bulk-assign",adminAuth,handleBulkAssign);
-router.get("/:id/chat", adminAuth, getComplaintChat);
-router.post("/:id/chat", adminAuth, sendComplaintChat);
+
+// Update complaint (status, priority, assignment, etc.)
+router.put("/:id", adminAuth, handleUpdateIssue);
+
+// Bulk operations
+router.post("/bulk-assign", adminAuth, handleBulkAssign);
+router.patch('/complaint/:complaintId/priority',adminOverridePriority);
+
 export default router;

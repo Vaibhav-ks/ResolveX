@@ -61,7 +61,9 @@ const sendOTPSMS = async (phone, otp, purpose) => {
 
 // Request OTP for Signup/Login
 export const requestOTP = asyncHandler(async (req, res) => {
-    const { identifier, type = 'email', purpose, userType } = req.body;
+    const { identifier, type = 'email', purpose, userType = 'user' } = req.body;
+
+    console.log('📱 Request OTP called:', { identifier, type, purpose, userType });
 
     if (!identifier) {
         throw new ApiError(400, "Email or phone number is required");
@@ -77,31 +79,39 @@ export const requestOTP = asyncHandler(async (req, res) => {
 
     // Check if user exists based on userType and purpose
     let userExists = false;
-    if (userType === 'user') {
-        userExists = await User.findOne({
-            $or: [{ email: identifier }, { phone: identifier }]
-        });
-    } else if (userType === 'staff') {
-        userExists = await Staff.findOne({
-            $or: [{ email: identifier }, { phone: identifier }]
-        });
-    } else if (userType === 'admin') {
-        userExists = await Admin.findOne({
-            $or: [{ email: identifier }, { phone: identifier }]
-        });
+    if (purpose === 'login' || purpose === 'password-reset') {
+        if (userType === 'user') {
+            userExists = await User.findOne({
+                $or: [{ email: identifier }, { phone: identifier }]
+            });
+        } else if (userType === 'staff') {
+            userExists = await Staff.findOne({
+                $or: [{ email: identifier }, { phone: identifier }]
+            });
+        } else if (userType === 'admin') {
+            userExists = await Admin.findOne({
+                $or: [{ email: identifier }, { phone: identifier }]
+            });
+        }
+
+        // For login/password-reset, user must exist
+        if (!userExists) {
+            throw new ApiError(404, `${userType} not found. Please sign up first.`);
+        }
     }
 
-    // For login, user must exist; for signup, user should not exist
-    if (purpose === 'login' && !userExists) {
-        throw new ApiError(404, "User not found. Please sign up first.");
-    }
-
-    if (purpose === 'signup' && userExists) {
-        throw new ApiError(400, "User already exists. Please login instead.");
+    if (purpose === 'signup') {
+        // For signup, user should not exist
+        let existingUser = await User.findOne({
+            $or: [{ email: identifier }, { phone: identifier }]
+        });
+        if (existingUser) {
+            throw new ApiError(400, "User already exists. Please login instead.");
+        }
     }
 
     // Delete any existing OTP for this identifier
-    await OTP.deleteMany({ identifier });
+    await OTP.deleteMany({ identifier, purpose });
 
     // Generate new OTP
     const otp = generateOTP();
@@ -113,8 +123,11 @@ export const requestOTP = asyncHandler(async (req, res) => {
         otp: hashedOTP,
         type: isEmail ? 'email' : 'phone',
         purpose,
+        userType,
         expiresAt: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
     });
+
+    console.log(`✅ OTP generated for ${identifier}: ${otp}`);
 
     // Send OTP based on type
     try {
@@ -132,6 +145,7 @@ export const requestOTP = asyncHandler(async (req, res) => {
         new ApiResponse(200, { 
             identifier, 
             type: isEmail ? 'email' : 'phone',
+            purpose,
             expiresIn: 600 
         }, "OTP sent successfully")
     );
@@ -139,10 +153,12 @@ export const requestOTP = asyncHandler(async (req, res) => {
 
 // Verify OTP
 export const verifyOTP = asyncHandler(async (req, res) => {
-    const { identifier, otp } = req.body;
+    const { identifier, otp, purpose } = req.body;
 
-    if (!identifier || !otp) {
-        throw new ApiError(400, "Identifier and OTP are required");
+    console.log('🔍 Verify OTP called:', { identifier, otp, purpose });
+
+    if (!identifier || !otp || !purpose) {
+        throw new ApiError(400, "Identifier, OTP and purpose are required");
     }
 
     // Find OTP record
@@ -154,7 +170,7 @@ export const verifyOTP = asyncHandler(async (req, res) => {
     });
 
     if (!otpRecord) {
-        throw new ApiError(400, "Invalid or expired OTP");
+        throw new ApiError(400, "Invalid or expired OTP. Please request a new OTP.");
     }
 
     // Check attempts limit (max 5 attempts)
@@ -176,20 +192,127 @@ export const verifyOTP = asyncHandler(async (req, res) => {
     otpRecord.verified = true;
     await otpRecord.save();
 
+    console.log(`✅ OTP verified for ${identifier}`);
+
     res.status(200).json(
-        new ApiResponse(200, { verified: true }, "OTP verified successfully")
+        new ApiResponse(200, { 
+            verified: true,
+            identifier,
+            purpose 
+        }, "OTP verified successfully")
     );
 });
 
 // User Signup with OTP
+// export const userSignupWithOTP = asyncHandler(async (req, res) => {
+//     const { name, email, password, phone, street, city, state, pincode, otp } = req.body;
+
+//     console.log('👤 User Signup called:', { name, email, phone });
+
+//     if (!name || !email || !password || !phone || !otp) {
+//         throw new ApiError(400, "All required fields must be filled including OTP");
+//     }
+
+//     // Verify OTP
+//     const otpRecord = await OTP.findOne({
+//         identifier: email,
+//         purpose: 'signup',
+//         expiresAt: { $gt: new Date() }
+//     });
+
+//     if (!otpRecord) {
+//         throw new ApiError(400, "OTP expired or not found. Please request a new OTP.");
+//     }
+
+//     // Check attempt limit
+//     if (otpRecord.attempts >= 5) {
+//         await OTP.deleteOne({ _id: otpRecord._id });
+//         throw new ApiError(429, "Too many failed attempts. Please request a new OTP.");
+//     }
+
+//     // Verify OTP
+//     const isValid = await bcrypt.compare(otp, otpRecord.otp);
+//     if (!isValid) {
+//         otpRecord.attempts += 1;
+//         await otpRecord.save();
+//         throw new ApiError(400, `Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
+//     }
+
+//     // Mark as verified
+//     otpRecord.verified = true;
+//     await otpRecord.save();
+
+//     // Check if user already exists
+//     const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
+//     if (existingUser) {
+//         throw new ApiError(400, "Email or phone already registered");
+//     }
+
+//     // Hash password
+//     const hashedPassword = await bcrypt.hash(password, 10);
+
+//     // Create user
+//     const newUser = await User.create({
+//         name,
+//         email,
+//         password: hashedPassword,
+//         phone,
+//         address: { street, city, state, pincode },
+//         isVerified: true
+//     });
+
+//     // Delete OTP record
+//     await OTP.deleteOne({ _id: otpRecord._id });
+
+//     // Generate tokens
+//     const payload = { id: newUser._id, role: newUser.role };
+//     const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
+//     const refreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
+
+//     res.cookie("refreshToken", refreshToken, {
+//         httpOnly: true,
+//         secure: process.env.NODE_ENV === "production",
+//         sameSite: "strict",
+//         maxAge: 7 * 24 * 60 * 60 * 1000
+//     });
+
+//     res.status(201).json(
+//         new ApiResponse(201, {
+//             accessToken,
+//             user: {
+//                 id: newUser._id,
+//                 name: newUser.name,
+//                 email: newUser.email,
+//                 phone: newUser.phone,
+//                 role: newUser.role
+//             }
+//         }, "User registered successfully")
+//     );
+// });
+
+// User Signup with OTP
 export const userSignupWithOTP = asyncHandler(async (req, res) => {
-    const { name, email, password, phone, street, city, state, pincode, otp } = req.body;
+    // 🚀 NEW: Added workspaceCode to the destructured body
+    const { name, email, password, phone, street, city, state, pincode, otp, workspaceCode } = req.body;
+
+    console.log('👤 User Signup called:', { name, email, phone, workspaceCode });
 
     if (!name || !email || !password || !phone || !otp) {
-        throw new ApiError(400, "All required fields must be filled");
+        throw new ApiError(400, "All required fields must be filled including OTP");
     }
 
-    // Verify OTP: allow inline verification if `otp` is provided, otherwise require a prior verified OTP
+    // 🚀 NEW: Verify Workspace Code if the user provided one (since it's optional for users)
+    let joinedWorkspaces = [];
+    if (workspaceCode) {
+        const admin = await Admin.findOne({ workspaceCode: workspaceCode.toUpperCase() });
+        if (admin) {
+            joinedWorkspaces.push(admin._id);
+        } else {
+            throw new ApiError(404, "Invalid Workspace Code provided. Please check the code or leave it blank.");
+        }
+    }
+
+    // Verify OTP
     const otpRecord = await OTP.findOne({
         identifier: email,
         purpose: 'signup',
@@ -197,29 +320,26 @@ export const userSignupWithOTP = asyncHandler(async (req, res) => {
     });
 
     if (!otpRecord) {
-        throw new ApiError(400, "Please verify OTP first or OTP has expired");
+        throw new ApiError(400, "OTP expired or not found. Please request a new OTP.");
     }
 
-    if (otp) {
-        // check attempt limit
-        if (otpRecord.attempts >= 5) {
-            await OTP.deleteOne({ _id: otpRecord._id });
-            throw new ApiError(429, "Too many failed attempts. Please request a new OTP.");
-        }
+    // Check attempt limit
+    if (otpRecord.attempts >= 5) {
+        await OTP.deleteOne({ _id: otpRecord._id });
+        throw new ApiError(429, "Too many failed attempts. Please request a new OTP.");
+    }
 
-        const isValid = await bcrypt.compare(otp, otpRecord.otp);
-        if (!isValid) {
-            otpRecord.attempts += 1;
-            await otpRecord.save();
-            throw new ApiError(400, `Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
-        }
-
-        // mark verified
-        otpRecord.verified = true;
+    // Verify OTP
+    const isValid = await bcrypt.compare(otp, otpRecord.otp);
+    if (!isValid) {
+        otpRecord.attempts += 1;
         await otpRecord.save();
-    } else if (!otpRecord.verified) {
-        throw new ApiError(400, "Please verify OTP first or OTP has expired");
+        throw new ApiError(400, `Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
     }
+
+    // Mark as verified
+    otpRecord.verified = true;
+    await otpRecord.save();
 
     // Check if user already exists
     const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
@@ -227,25 +347,29 @@ export const userSignupWithOTP = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Email or phone already registered");
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // 🔧 FIX: Removed manual password hashing
+    // The User model's pre-save hook will handle password hashing automatically
+    // This prevents the double hashing bug where password gets hashed twice
 
-    // Create user
+    // Create user (password will be hashed by pre-save hook)
     const newUser = await User.create({
         name,
         email,
-        password: hashedPassword,
+        password: password,  // ← FIXED: Pass plain password, let model hash it
         phone,
         address: { street, city, state, pincode },
-        isVerified: true
+        isVerified: true,
+        joinedWorkspaces // 🚀 NEW: Assign the workspace array to the user!
     });
+    
+    console.log('✅ User created with ID:', newUser._id, '(password auto-hashed by model)');
 
     // Delete OTP record
     await OTP.deleteOne({ _id: otpRecord._id });
 
     // Generate tokens
     const payload = { id: newUser._id, role: newUser.role };
-    const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
+    const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "24h" });
     const refreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
 
     res.cookie("refreshToken", refreshToken, {
@@ -263,7 +387,8 @@ export const userSignupWithOTP = asyncHandler(async (req, res) => {
                 name: newUser.name,
                 email: newUser.email,
                 phone: newUser.phone,
-                role: newUser.role
+                role: newUser.role,
+                joinedWorkspaces: newUser.joinedWorkspaces // Send this back so the frontend knows what they joined
             }
         }, "User registered successfully")
     );
@@ -273,11 +398,13 @@ export const userSignupWithOTP = asyncHandler(async (req, res) => {
 export const userLoginWithOTP = asyncHandler(async (req, res) => {
     const { identifier, otp } = req.body;
 
+    console.log('🔐 User Login called:', { identifier });
+
     if (!identifier || !otp) {
         throw new ApiError(400, "Identifier and OTP are required");
     }
 
-    // Verify OTP: allow inline verification if `otp` is provided, otherwise require a prior verified OTP
+    // Find and verify OTP
     const otpRecord = await OTP.findOne({
         identifier,
         purpose: 'login',
@@ -285,27 +412,23 @@ export const userLoginWithOTP = asyncHandler(async (req, res) => {
     });
 
     if (!otpRecord) {
-        throw new ApiError(400, "Please verify OTP first or OTP has expired");
+        throw new ApiError(400, "OTP expired or not found. Please request a new OTP.");
     }
 
-    if (otp) {
-        if (otpRecord.attempts >= 5) {
-            await OTP.deleteOne({ _id: otpRecord._id });
-            throw new ApiError(429, "Too many failed attempts. Please request a new OTP.");
-        }
+    if (otpRecord.attempts >= 5) {
+        await OTP.deleteOne({ _id: otpRecord._id });
+        throw new ApiError(429, "Too many failed attempts. Please request a new OTP.");
+    }
 
-        const isValid = await bcrypt.compare(otp, otpRecord.otp);
-        if (!isValid) {
-            otpRecord.attempts += 1;
-            await otpRecord.save();
-            throw new ApiError(400, `Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
-        }
-
-        otpRecord.verified = true;
+    const isValid = await bcrypt.compare(otp, otpRecord.otp);
+    if (!isValid) {
+        otpRecord.attempts += 1;
         await otpRecord.save();
-    } else if (!otpRecord.verified) {
-        throw new ApiError(400, "Please verify OTP first or OTP has expired");
+        throw new ApiError(400, `Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
     }
+
+    otpRecord.verified = true;
+    await otpRecord.save();
 
     // Find user
     const user = await User.findOne({
@@ -321,7 +444,7 @@ export const userLoginWithOTP = asyncHandler(async (req, res) => {
 
     // Generate tokens
     const payload = { id: user._id, role: user.role };
-    const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
+    const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "24h" });
     const refreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
 
     res.cookie("refreshToken", refreshToken, {
@@ -345,55 +468,318 @@ export const userLoginWithOTP = asyncHandler(async (req, res) => {
     );
 });
 
+// Staff Signup with OTP
+// export const staffSignupWithOTP = asyncHandler(async (req, res) => {
+//     const { name, email, password, phone, staffId, department, otp } = req.body;
+
+//     console.log('👔 Staff Signup called:', { name, email, staffId });
+
+//     if (!name || !email || !password || !phone || !staffId || !otp) {
+//         throw new ApiError(400, "All required fields must be filled including OTP");
+//     }
+
+//     // Verify OTP
+//     const otpRecord = await OTP.findOne({
+//         identifier: email,
+//         purpose: 'signup',
+//         userType: 'staff',
+//         expiresAt: { $gt: new Date() }
+//     });
+
+//     if (!otpRecord) {
+//         throw new ApiError(400, "OTP expired or not found. Please request a new OTP.");
+//     }
+
+//     const isValid = await bcrypt.compare(otp, otpRecord.otp);
+//     if (!isValid) {
+//         otpRecord.attempts += 1;
+//         await otpRecord.save();
+//         throw new ApiError(400, `Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
+//     }
+
+//     otpRecord.verified = true;
+//     await otpRecord.save();
+
+//     // Check if staff already exists
+//     const existingStaff = await Staff.findOne({ $or: [{ email }, { staffId }] });
+//     if (existingStaff) {
+//         throw new ApiError(400, "Email or Staff ID already registered");
+//     }
+
+//     // Hash password
+//     const hashedPassword = await bcrypt.hash(password, 10);
+
+//     // Create staff
+//     const newStaff = await Staff.create({
+//         name,
+//         email,
+//         password: hashedPassword,
+//         phone,
+//         staffId,
+//         department,
+//         isVerified: true
+//     });
+
+//     // Delete OTP record
+//     await OTP.deleteOne({ _id: otpRecord._id });
+
+//     // Generate tokens
+//     const payload = { id: newStaff._id, role: 'staff' };
+//     const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
+//     const refreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
+
+//     res.cookie("refreshToken", refreshToken, {
+//         httpOnly: true,
+//         secure: process.env.NODE_ENV === "production",
+//         sameSite: "strict",
+//         maxAge: 7 * 24 * 60 * 60 * 1000
+//     });
+
+//     res.status(201).json(
+//         new ApiResponse(201, {
+//             accessToken,
+//             staff: {
+//                 id: newStaff._id,
+//                 name: newStaff.name,
+//                 email: newStaff.email,
+//                 staffId: newStaff.staffId,
+//                 department: newStaff.department,
+//                 role: 'staff'
+//             }
+//         }, "Staff registered successfully")
+//     );
+// });
+
+// Staff Signup with OTP
+export const staffSignupWithOTP = asyncHandler(async (req, res) => {
+    // 🚀 NEW: Added workspaceCode to the destructured body
+    const { name, email, password, phone, staffId, department, otp, workspaceCode } = req.body;
+
+    console.log('👔 Staff Signup called:', { name, email, staffId, workspaceCode });
+
+    if (!name || !email || !password || !phone || !staffId || !otp || !workspaceCode) {
+        throw new ApiError(400, "All required fields must be filled, including OTP and Workspace Code");
+    }
+
+    // 🚀 NEW: Validate the Workspace Code before doing anything else
+    const admin = await Admin.findOne({ workspaceCode: workspaceCode.toUpperCase() });
+    if (!admin) {
+        throw new ApiError(404, "Invalid Workspace Code. Please check with your administrator.");
+    }
+
+    // Verify OTP
+    const otpRecord = await OTP.findOne({
+        identifier: email,
+        purpose: 'signup',
+        userType: 'staff',
+        expiresAt: { $gt: new Date() }
+    });
+
+    if (!otpRecord) {
+        throw new ApiError(400, "OTP expired or not found. Please request a new OTP.");
+    }
+
+    const isValid = await bcrypt.compare(otp, otpRecord.otp);
+    if (!isValid) {
+        otpRecord.attempts += 1;
+        await otpRecord.save();
+        throw new ApiError(400, `Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
+    }
+
+    otpRecord.verified = true;
+    await otpRecord.save();
+
+    // Check if staff already exists
+    const existingStaff = await Staff.findOne({ $or: [{ email }, { staffId }] });
+    if (existingStaff) {
+        throw new ApiError(400, "Email or Staff ID already registered");
+    }
+
+    // 🔧 FIX: Removed manual password hashing
+    // The Staff model's pre-save hook will handle password hashing automatically
+    // This prevents the double hashing bug where password gets hashed twice
+
+    // Create staff (password will be hashed by pre-save hook)
+    const newStaff = await Staff.create({
+        name,
+        email,
+        password: password,  // ← FIXED: Pass plain password, let model hash it
+        phone,
+        staffId,
+        department,
+        adminId: admin._id, // 🚀 NEW: Lock them to this specific Admin's workspace
+        isApproved: false,  // 🚀 NEW: Admin must approve them before they can log in
+        isVerified: true
+    });
+    
+    console.log('✅ Staff created with ID:', newStaff._id, '(password auto-hashed by model)');
+
+    // Delete OTP record
+    await OTP.deleteOne({ _id: otpRecord._id });
+
+    // Generate tokens
+    const payload = { id: newStaff._id, role: 'staff' };
+    const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "24h" });
+    const refreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
+
+    res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    res.status(201).json(
+        new ApiResponse(201, {
+            accessToken,
+            staff: {
+                id: newStaff._id,
+                name: newStaff.name,
+                email: newStaff.email,
+                staffId: newStaff.staffId,
+                department: newStaff.department,
+                adminId: newStaff.adminId,
+                isApproved: newStaff.isApproved,
+                role: 'staff'
+            }
+        }, "Staff registered successfully. Account is pending Admin approval.") // Updated message
+    );
+});
+
+// Staff Login with OTP
+// export const staffLoginWithOTP = asyncHandler(async (req, res) => {
+//     const { identifier, otp } = req.body;
+
+//     console.log('👔 Staff Login called:', { identifier });
+
+//     if (!identifier || !otp) {
+//         throw new ApiError(400, "Identifier and OTP are required");
+//     }
+
+//     const otpRecord = await OTP.findOne({
+//         identifier,
+//         purpose: 'login',
+//         userType: 'staff',
+//         expiresAt: { $gt: new Date() }
+//     });
+
+//     if (!otpRecord) {
+//         throw new ApiError(400, "OTP expired or not found. Please request a new OTP.");
+//     }
+
+//     if (otpRecord.attempts >= 5) {
+//         await OTP.deleteOne({ _id: otpRecord._id });
+//         throw new ApiError(429, "Too many failed attempts. Please request a new OTP.");
+//     }
+
+//     const isValid = await bcrypt.compare(otp, otpRecord.otp);
+//     if (!isValid) {
+//         otpRecord.attempts += 1;
+//         await otpRecord.save();
+//         throw new ApiError(400, `Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
+//     }
+
+//     otpRecord.verified = true;
+//     await otpRecord.save();
+
+//     const staff = await Staff.findOne({
+//         $or: [{ email: identifier }, { phone: identifier }, { staffId: identifier }]
+//     });
+
+//     if (!staff) {
+//         throw new ApiError(404, "Staff not found");
+//     }
+
+//     await OTP.deleteOne({ _id: otpRecord._id });
+
+//     const payload = { id: staff._id, role: 'staff' };
+//     const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
+//     const refreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
+
+//     res.cookie("refreshToken", refreshToken, {
+//         httpOnly: true,
+//         secure: process.env.NODE_ENV === "production",
+//         sameSite: "strict",
+//         maxAge: 7 * 24 * 60 * 60 * 1000
+//     });
+
+//     res.status(200).json(
+//         new ApiResponse(200, {
+//             accessToken,
+//             staff: {
+//                 id: staff._id,
+//                 name: staff.name,
+//                 email: staff.email,
+//                 staffId: staff.staffId,
+//                 department: staff.department,
+//                 role: 'staff'
+//             }
+//         }, "Staff login successful")
+//     );
+// });
+
 // Staff Login with OTP
 export const staffLoginWithOTP = asyncHandler(async (req, res) => {
-    const { identifier, otp } = req.body;
+    // 🚀 NEW: Added workspaceCode requirement
+    const { identifier, otp, workspaceCode } = req.body;
 
-    if (!identifier || !otp) {
-        throw new ApiError(400, "Identifier and OTP are required");
+    console.log('👔 Staff Login called:', { identifier, workspaceCode });
+
+    if (!identifier || !otp || !workspaceCode) {
+        throw new ApiError(400, "Identifier, OTP, and Workspace Code are required");
+    }
+
+    // 🚀 NEW: Verify the workspace exists first
+    const admin = await Admin.findOne({ workspaceCode: workspaceCode.toUpperCase() });
+    if (!admin) {
+        throw new ApiError(404, "Invalid Workspace Code");
     }
 
     const otpRecord = await OTP.findOne({
         identifier,
         purpose: 'login',
+        userType: 'staff',
         expiresAt: { $gt: new Date() }
     });
 
     if (!otpRecord) {
-        throw new ApiError(400, "Please verify OTP first or OTP has expired");
+        throw new ApiError(400, "OTP expired or not found. Please request a new OTP.");
     }
 
-    if (otp) {
-        if (otpRecord.attempts >= 5) {
-            await OTP.deleteOne({ _id: otpRecord._id });
-            throw new ApiError(429, "Too many failed attempts. Please request a new OTP.");
-        }
+    if (otpRecord.attempts >= 5) {
+        await OTP.deleteOne({ _id: otpRecord._id });
+        throw new ApiError(429, "Too many failed attempts. Please request a new OTP.");
+    }
 
-        const isValid = await bcrypt.compare(otp, otpRecord.otp);
-        if (!isValid) {
-            otpRecord.attempts += 1;
-            await otpRecord.save();
-            throw new ApiError(400, `Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
-        }
-
-        otpRecord.verified = true;
+    const isValid = await bcrypt.compare(otp, otpRecord.otp);
+    if (!isValid) {
+        otpRecord.attempts += 1;
         await otpRecord.save();
-    } else if (!otpRecord.verified) {
-        throw new ApiError(400, "Please verify OTP first or OTP has expired");
+        throw new ApiError(400, `Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
     }
 
+    otpRecord.verified = true;
+    await otpRecord.save();
+
+    // 🚀 NEW: Find staff BUT ensure they belong to the provided workspace
     const staff = await Staff.findOne({
-        $or: [{ email: identifier }, { phone: identifier }, { staffId: identifier }]
+        $or: [{ email: identifier }, { phone: identifier }, { staffId: identifier }],
+        adminId: admin._id // Security check
     });
 
     if (!staff) {
-        throw new ApiError(404, "Staff not found");
+        throw new ApiError(404, "Staff member not found in this workspace");
+    }
+
+    // 🚀 NEW: Block login if Admin hasn't approved them yet
+    if (!staff.isApproved) {
+        throw new ApiError(403, "Login Denied: Your account is still pending Admin approval.");
     }
 
     await OTP.deleteOne({ _id: otpRecord._id });
 
-    const payload = { id: staff._id, role: 'staff' };
-    const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
+    const payload = { id: staff._id, role: 'staff', workspaceCode: admin.workspaceCode };
+    const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "24h" });
     const refreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
 
     res.cookie("refreshToken", refreshToken, {
@@ -410,6 +796,9 @@ export const staffLoginWithOTP = asyncHandler(async (req, res) => {
                 id: staff._id,
                 name: staff.name,
                 email: staff.email,
+                staffId: staff.staffId,
+                department: staff.department,
+                workspaceCode: admin.workspaceCode,
                 role: 'staff'
             }
         }, "Staff login successful")
@@ -420,6 +809,8 @@ export const staffLoginWithOTP = asyncHandler(async (req, res) => {
 export const adminLoginWithOTP = asyncHandler(async (req, res) => {
     const { identifier, otp } = req.body;
 
+    console.log('👑 Admin Login called:', { identifier });
+
     if (!identifier || !otp) {
         throw new ApiError(400, "Identifier and OTP are required");
     }
@@ -427,31 +818,28 @@ export const adminLoginWithOTP = asyncHandler(async (req, res) => {
     const otpRecord = await OTP.findOne({
         identifier,
         purpose: 'login',
+        userType: 'admin',
         expiresAt: { $gt: new Date() }
     });
 
     if (!otpRecord) {
-        throw new ApiError(400, "Please verify OTP first or OTP has expired");
+        throw new ApiError(400, "OTP expired or not found. Please request a new OTP.");
     }
 
-    if (otp) {
-        if (otpRecord.attempts >= 5) {
-            await OTP.deleteOne({ _id: otpRecord._id });
-            throw new ApiError(429, "Too many failed attempts. Please request a new OTP.");
-        }
+    if (otpRecord.attempts >= 5) {
+        await OTP.deleteOne({ _id: otpRecord._id });
+        throw new ApiError(429, "Too many failed attempts. Please request a new OTP.");
+    }
 
-        const isValid = await bcrypt.compare(otp, otpRecord.otp);
-        if (!isValid) {
-            otpRecord.attempts += 1;
-            await otpRecord.save();
-            throw new ApiError(400, `Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
-        }
-
-        otpRecord.verified = true;
+    const isValid = await bcrypt.compare(otp, otpRecord.otp);
+    if (!isValid) {
+        otpRecord.attempts += 1;
         await otpRecord.save();
-    } else if (!otpRecord.verified) {
-        throw new ApiError(400, "Please verify OTP first or OTP has expired");
+        throw new ApiError(400, `Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
     }
+
+    otpRecord.verified = true;
+    await otpRecord.save();
 
     const admin = await Admin.findOne({
         $or: [{ email: identifier }, { phone: identifier }]
@@ -464,7 +852,7 @@ export const adminLoginWithOTP = asyncHandler(async (req, res) => {
     await OTP.deleteOne({ _id: otpRecord._id });
 
     const payload = { id: admin._id, role: admin.role };
-    const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
+    const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "24h" });
     const refreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
 
     res.cookie("refreshToken", refreshToken, {
@@ -491,6 +879,8 @@ export const adminLoginWithOTP = asyncHandler(async (req, res) => {
 // Password Reset - Request OTP
 export const requestPasswordResetOTP = asyncHandler(async (req, res) => {
     const { identifier, userType = 'user' } = req.body;
+
+    console.log('🔑 Password Reset Request:', { identifier, userType });
 
     if (!identifier) {
         throw new ApiError(400, "Email or phone number is required");
@@ -527,6 +917,7 @@ export const requestPasswordResetOTP = asyncHandler(async (req, res) => {
         otp: hashedOTP,
         type: user.email === identifier ? 'email' : 'phone',
         purpose: 'password-reset',
+        userType,
         expiresAt: new Date(Date.now() + 10 * 60 * 1000)
     });
 
@@ -546,6 +937,8 @@ export const requestPasswordResetOTP = asyncHandler(async (req, res) => {
 export const resetPasswordWithOTP = asyncHandler(async (req, res) => {
     const { identifier, otp, newPassword, userType = 'user' } = req.body;
 
+    console.log('🔄 Password Reset Verify:', { identifier, userType });
+
     if (!identifier || !otp || !newPassword) {
         throw new ApiError(400, "All fields are required");
     }
@@ -558,6 +951,7 @@ export const resetPasswordWithOTP = asyncHandler(async (req, res) => {
     const otpRecord = await OTP.findOne({
         identifier,
         purpose: 'password-reset',
+        userType,
         expiresAt: { $gt: new Date() }
     });
 
@@ -611,7 +1005,9 @@ export const resetPasswordWithOTP = asyncHandler(async (req, res) => {
 
 // Resend OTP
 export const resendOTP = asyncHandler(async (req, res) => {
-    const { identifier, purpose = 'login' } = req.body;
+    const { identifier, purpose = 'login', userType = 'user' } = req.body;
+
+    console.log('🔄 Resend OTP:', { identifier, purpose, userType });
 
     if (!identifier) {
         throw new ApiError(400, "Identifier is required");
@@ -642,6 +1038,7 @@ export const resendOTP = asyncHandler(async (req, res) => {
         otp: hashedOTP,
         type: isEmail ? 'email' : 'phone',
         purpose,
+        userType,
         expiresAt: new Date(Date.now() + 10 * 60 * 1000)
     });
 
@@ -655,5 +1052,27 @@ export const resendOTP = asyncHandler(async (req, res) => {
     res.status(200).json(
         new ApiResponse(200, { identifier }, "OTP resent successfully")
     );
-});  
+});
 
+// Debug OTP endpoint
+export const debugOTP = asyncHandler(async (req, res) => {
+    const { identifier } = req.query;
+    
+    const otps = await OTP.find({ identifier });
+    
+    res.status(200).json(
+        new ApiResponse(200, {
+            count: otps.length,
+            otps: otps.map(otp => ({
+                identifier: otp.identifier,
+                purpose: otp.purpose,
+                userType: otp.userType,
+                verified: otp.verified,
+                attempts: otp.attempts,
+                expiresAt: otp.expiresAt,
+                createdAt: otp.createdAt,
+                isExpired: otp.expiresAt < new Date()
+            }))
+        }, "OTP debug information")
+    );
+});
