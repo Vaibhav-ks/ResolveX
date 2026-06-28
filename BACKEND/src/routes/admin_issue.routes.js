@@ -11,7 +11,7 @@ import { adminAuth } from "../middleware/adminAuth.js";
 import { adminOverridePriority } from "../controllers/user_issue.controllers.js";
 const router = express.Router();
 
-// ✅ CRITICAL FIX: Stats route MUST be BEFORE /:id to avoid route collision
+//Stats route MUST be BEFORE /:id to avoid route collision
 router.get("/stats", adminAuth, getIssueStats);
 
 // Get all complaints with filters
@@ -28,6 +28,6 @@ router.put("/:id", adminAuth, handleUpdateIssue);
 
 // Bulk operations
 router.post("/bulk-assign", adminAuth, handleBulkAssign);
-router.patch('/complaint/:complaintId/priority',adminOverridePriority);
+router.patch('/complaint/:complaintId/priority', adminAuth, adminOverridePriority);
 
 export default router;

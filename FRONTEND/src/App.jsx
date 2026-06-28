@@ -20,6 +20,7 @@ import StaffDashboard from "./pages/staff/StaffDashboard";
 import StaffIssuesPage from "./pages/staff/StaffIssuesPage";
 import AuditLogsPage from "./pages/admin/AuditLogsPage";
 import AdminDepartmentsPage from "./pages/admin/AdminDepartmentsPage";
+import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
 import NotificationsPage from "./pages/public/NotificationPage";
 import AdminChatPage from './pages/admin/AdminChatPage';
 import ComplaintDetailPage from './components/common/ComplaintDetailPage';
@@ -54,16 +55,6 @@ const BASE_URL =
     console.error('Error getting user ID:', error);
     return null;
   }
-  return null;
-};
-
-// Debug Component to see current route
-const RouteDebugger = () => {
-  const location = useLocation();
-
-  useEffect(() => {
-  }, [location]);
-
   return null;
 };
 
@@ -263,9 +254,6 @@ function App() {
 
   return (
     <Router>
-      {/* Debug route info */}
-      <RouteDebugger />
-
       {/* Auth Modal */}
       {showAuthModal && (
         <AuthModal
@@ -401,6 +389,15 @@ function App() {
           element={
             <ProtectedRoute requiredRole="admin" authStatus={authStatus}>
               <AdminStaffPage authStatus={authStatus} onLogout={handleLogout} />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/settings"
+          element={
+            <ProtectedRoute requiredRole="admin" authStatus={authStatus}>
+              <AdminSettingsPage onLogout={handleLogout} />
             </ProtectedRoute>
           }
         />

@@ -1,21 +1,21 @@
 import express from "express";
 import {
-  userSignup,
   userLogin,
   refreshToken,
   logout,
   getUserProfile,
   updateUserProfile,
-  joinWorkspace,        // ← NEW
-  leaveWorkspace,       // ← NEW
-  getMyWorkspaces       // ← NEW
+  joinWorkspace,        
+  leaveWorkspace,       
+  getMyWorkspaces       
 } from "../controllers/user.controllers.js";
 import { auth } from "../middleware/auth.js";
 
 const router = express.Router();
 
 // Auth routes
-router.post("/signup", userSignup);
+// NOTE: User signup now lives at POST /api/otp/signup/user (otp.routes.js),
+// which actually verifies the OTP before creating the account.
 router.post("/login", userLogin);
 router.post("/refresh-token", refreshToken);
 router.post("/logout", logout);
@@ -24,29 +24,9 @@ router.post("/logout", logout);
 router.get("/profile", auth, getUserProfile);
 router.put("/profile", auth, updateUserProfile);
 
-// 🚀 NEW: Workspace management routes
+// Workspace management routes
 router.post("/join-workspace", auth, joinWorkspace);
 router.post("/leave-workspace/:workspaceId", auth, leaveWorkspace);
 router.get("/my-workspaces", auth, getMyWorkspaces);
-
-// Debug route
-router.get("/debug/all-users", async (req, res) => {
-  try {
-    const User = require("../models/User.models.js").default || require("../models/User.models.js");
-    const users = await User.find({}).select("-password");
-    
-    res.json({
-      success: true,
-      count: users.length,
-      users: users
-    });
-  } catch (error) {
-    console.error("Error fetching users:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching users"
-    });
-  }
-});
 
 export default router;

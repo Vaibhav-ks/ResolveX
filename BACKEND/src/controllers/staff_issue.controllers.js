@@ -1,5 +1,4 @@
 import UserComplaint from "../models/UserComplaint.models.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
 import Admin from "../models/Admin.models.js";
 import NotificationService from "../services/notification.service.js";
 
@@ -19,6 +18,8 @@ export const handleGetStaffComplaints=async(req ,res)=>{
             .populate('assignedTo', 'name staffId email')
             .populate('department', 'name')
             .populate('comments.staff', 'name staffId')
+            .populate('comments.admin', 'name organizationName')
+            .populate('comments.user', 'name')
             .sort({ 
                 priority: -1, // High priority first
                 createdAt: -1 // Newest first
@@ -41,77 +42,6 @@ export const handleGetStaffComplaints=async(req ,res)=>{
 };
 
 // Staff updates complaint status
-// export const handleUpdateStaffComplaint = async (req, res) => {
-//     try {
-//         const { id } = req.params;
-//         const { status, comments } = req.body;
-//         const staffId = req.staff._id;
-        
-//         const complaint = await UserComplaint.findById(id);
-        
-//         if (!complaint) {
-//             return res.status(404).json({
-//                 success: false,
-//                 message: 'Complaint not found'
-//             });
-//         }
-
-//         // Check if staff is assigned to this complaint
-//         if (complaint.assignedTo.toString() !== staffId.toString()) {
-//             return res.status(403).json({
-//                 success: false,
-//                 message: 'Not authorized to update this complaint'
-//             });
-//         }
-
-//         const updates = {};
-//         const activityLog = [];
-
-//         // Update status
-//         if (status && complaint.status !== status) {
-//             complaint.status = status;
-//             updates.status = status;
-//             activityLog.push(`Status updated to ${status}`);
-//         }
-
-//         // Add staff comments/work notes
-//         if (comments) {
-//             complaint.comments.push({
-//                 staff: staffId,
-//                 message: `[STAFF UPDATE]: ${comments}`,
-//                 createdAt: new Date()
-//             });
-//             updates.comments = comments;
-//             activityLog.push('Work notes added');
-//         }
-
-//         complaint.updatedAt = new Date();
-//         await complaint.save();
-
-//         // Populate for response
-//         await complaint.populate('user', 'name email phone');
-//         await complaint.populate('assignedTo', 'name staffId email');
-//         await complaint.populate('department', 'name');
-//         await complaint.populate('comments.staff', 'name staffId');
-
-//         res.json({
-//             success: true,
-//             message: 'Complaint updated successfully',
-//             data: complaint,
-//             updates: updates,
-//             activity: activityLog
-//         });
-
-//     } catch (error) {
-//         console.error('Error updating staff complaint:', error);
-//         res.status(500).json({
-//             success: false,
-//             message: 'Error updating complaint'
-//         });
-//     }
-// };
-
-// Staff updates complaint status
 export const handleUpdateStaffComplaint = async (req, res) => {
     try {
         const { id } = req.params;
@@ -128,7 +58,7 @@ export const handleUpdateStaffComplaint = async (req, res) => {
         }
 
         // Check if staff is assigned to this complaint
-        if (complaint.assignedTo.toString() !== staffId.toString()) {
+        if (!complaint.assignedTo || complaint.assignedTo.toString() !== staffId.toString()) {
             return res.status(403).json({
                 success: false,
                 message: 'Not authorized to update this complaint'
@@ -145,7 +75,7 @@ export const handleUpdateStaffComplaint = async (req, res) => {
             updates.status = status;
             activityLog.push(`Status updated to ${status}`);
 
-            // 🚀 THE FIX: Record the exact time it was resolved for our Analytics Engine!
+            //   THE FIX: Record the exact time it was resolved for our Analytics Engine!
             if (status === 'resolved' || status === 'closed') {
                 complaint.resolvedAt = new Date();
             }
@@ -165,6 +95,7 @@ export const handleUpdateStaffComplaint = async (req, res) => {
         // Add staff comments/work notes
         if (comments) {
             complaint.comments.push({
+                authorRole: 'staff',
                 staff: staffId,
                 message: `[STAFF UPDATE]: ${comments}`,
                 createdAt: new Date()
@@ -193,6 +124,8 @@ export const handleUpdateStaffComplaint = async (req, res) => {
         await complaint.populate('assignedTo', 'name staffId email');
         await complaint.populate('department', 'name');
         await complaint.populate('comments.staff', 'name staffId');
+        await complaint.populate('comments.admin', 'name organizationName');
+        await complaint.populate('comments.user', 'name');
 
         res.json({
             success: true,
@@ -264,7 +197,8 @@ export const handleGetStaffStats = async (req, res) => {
 };
 
 // Add this simple function to staff_issue.controller.js
-export const getAdminsIdForStaff = asyncHandler(async (req, res) => {
+export const getAdminsIdForStaff = async (req, res) => {
+  try {
     try {
         console.log("🔍 Fetching admin information...");
         
@@ -303,4 +237,9 @@ export const getAdminsIdForStaff = asyncHandler(async (req, res) => {
             stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
-});
+
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server error" });
+  }
+};

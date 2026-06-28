@@ -8,10 +8,11 @@ import {
     handleComplaintLocations,
     handleGetMyIssues,
     handleGetStats,
-    // NEW IMPORTS
     checkDuplicateComplaint,
     handleUpvoteComplaint,
-    handleDeleteIssue
+    handleDeleteIssue,
+    addComplaintComment,
+    getComplaintComments
 } from "../controllers/user_issue.controllers.js";
 import { auth } from "../middleware/auth.js";
 
@@ -40,11 +41,15 @@ router.get('/locations', handleComplaintLocations);
 // GET /api/user_issues/:id - Get single complaint details (public)
 router.get('/:id', handleSingleIssueFetch);
 
-// NEW: Upvote an existing complaint
+// Upvote an existing complaint
 router.put('/:id/upvote', auth, handleUpvoteComplaint);
 
 // PUT /api/user_issues/:id/vote - Add voting system for public engagement
 router.put('/:id/vote', handleVoteCount);
+
+// Comments: any authenticated user can comment on any complaint; comments are public to view
+router.get('/:id/comments', getComplaintComments);
+router.post('/:id/comments', auth, addComplaintComment);
 
 // DELETE /api/user_issues/:id - Delete a complaint (owner only)
 router.delete('/:id', auth, handleDeleteIssue);

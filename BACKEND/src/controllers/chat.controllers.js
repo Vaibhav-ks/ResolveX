@@ -1,16 +1,13 @@
-// src/controllers/enhanced_chat.controllers.js
 import ChatMessage from "../models/chat.model.js";
 import UserComplaint from "../models/UserComplaint.models.js";
 import User from "../models/User.models.js";
 import Staff from "../models/Staff.models.js";
 import Admin from "../models/Admin.models.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
-import { ApiResponse } from "../utils/ApiResponse.js";
-import { ApiError } from "../utils/ApiError.js";
 
 // ==================== SEND MESSAGE ====================
 
-export const sendMessage = asyncHandler(async (req, res) => {
+export const sendMessage = async (req, res) => {
+  try {
     const { complaintId, message, receiverId, receiverModel } = req.body;
     
     // Determine sender based on authenticated user
@@ -29,11 +26,11 @@ export const sendMessage = asyncHandler(async (req, res) => {
         senderModel = 'Admin';
         senderName = req.admin.name;
     } else {
-        throw new ApiError(401, "Unauthorized");
+        return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     if (!complaintId || !message) {
-        throw new ApiError(400, "Complaint ID and message are required");
+        return res.status(400).json({ success: false, message: "Complaint ID and message are required" });
     }
 
     // Verify complaint exists
@@ -42,7 +39,7 @@ export const sendMessage = asyncHandler(async (req, res) => {
         .populate('assignedTo', 'name email');
     
     if (!complaint) {
-        throw new ApiError(404, "Complaint not found");
+        return res.status(404).json({ success: false, message: "Complaint not found" });
     }
 
     // Generate conversation ID
@@ -98,7 +95,7 @@ export const sendMessage = asyncHandler(async (req, res) => {
     }
 
     res.status(201).json(
-        new ApiResponse(201, {
+        { success: true, message: "Message sent successfully", data: {
             message: chatMessage,
             complaintInfo: {
                 id: complaint._id,
@@ -106,24 +103,30 @@ export const sendMessage = asyncHandler(async (req, res) => {
                 status: complaint.status,
                 category: complaint.category
             }
-        }, "Message sent successfully")
+        } }
     );
-});
+
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server error" });
+  }
+};
 
 // ==================== GET CONVERSATION ====================
 
-export const getConversation = asyncHandler(async (req, res) => {
+export const getConversation = async (req, res) => {
+  try {
     const { complaintId } = req.params;
     const { page = 1, limit = 50 } = req.query;
 
     if (!complaintId) {
-        throw new ApiError(400, "Complaint ID is required");
+        return res.status(400).json({ success: false, message: "Complaint ID is required" });
     }
 
     // Verify complaint exists and user has access
     const complaint = await UserComplaint.findById(complaintId);
     if (!complaint) {
-        throw new ApiError(404, "Complaint not found");
+        return res.status(404).json({ success: false, message: "Complaint not found" });
     }
 
     // Check access permissions
@@ -137,7 +140,7 @@ export const getConversation = asyncHandler(async (req, res) => {
     }
 
     if (!hasAccess) {
-        throw new ApiError(403, "You don't have access to this conversation");
+        return res.status(403).json({ success: false, message: "You don't have access to this conversation" });
     }
 
     const conversationId = `complaint_${complaintId}`;
@@ -179,7 +182,7 @@ export const getConversation = asyncHandler(async (req, res) => {
     const participants = await getConversationParticipants(complaint);
 
     res.status(200).json(
-        new ApiResponse(200, {
+        { success: true, message: "Conversation fetched successfully", data: {
             messages,
             participants,
             complaint: {
@@ -198,111 +201,19 @@ export const getConversation = asyncHandler(async (req, res) => {
                 totalPages: Math.ceil(totalMessages / limit),
                 hasMore: skip + messages.length < totalMessages
             }
-        }, "Conversation fetched successfully")
+        } }
     );
-});
 
-// ==================== GET ALL USER CONVERSATIONS ====================
-
-// export const getAllConversations = asyncHandler(async (req, res) => {
-//     let userId, userModel;
-
-//     if (req.user) {
-//         userId = req.user._id;
-//         userModel = 'User';
-//     } else if (req.staff) {
-//         userId = req.staff._id;
-//         userModel = 'Staff';
-//     } else if (req.admin) {
-//         userId = req.admin._id;
-//         userModel = 'Admin';
-//     } else {
-//         throw new ApiError(401, "Unauthorized");
-//     }
-
-//     let complaints;
-
-//     if (userModel === 'Admin') {
-//         // Admins see all complaints with messages
-//         complaints = await UserComplaint.find()
-//             .populate('user', 'name email profileImage')
-//             .populate('assignedTo', 'name email profileImage')
-//             .sort({ updatedAt: -1 })
-//             .lean();
-//     } else if (userModel === 'Staff') {
-//         // Staff see only assigned complaints
-//         complaints = await UserComplaint.find({ assignedTo: userId })
-//             .populate('user', 'name email profileImage')
-//             .populate('assignedTo', 'name email profileImage')
-//             .sort({ updatedAt: -1 })
-//             .lean();
-//     } else {
-//         // Users see their own complaints
-//         complaints = await UserComplaint.find({ user: userId })
-//             .populate('user', 'name email profileImage')
-//             .populate('assignedTo', 'name email profileImage')
-//             .sort({ updatedAt: -1 })
-//             .lean();
-//     }
-
-//     // Get last message and unread count for each complaint
-//     const conversationsWithDetails = await Promise.all(
-//         complaints.map(async (complaint) => {
-//             const conversationId = `complaint_${complaint._id}`;
-            
-//             const [lastMessage, unreadCount] = await Promise.all([
-//                 ChatMessage.findOne({ conversationId })
-//                     .sort({ createdAt: -1 })
-//                     .populate('senderId', 'name')
-//                     .lean(),
-//                 ChatMessage.countDocuments({
-//                     conversationId,
-//                     receiverId: userId,
-//                     isRead: false
-//                 })
-//             ]);
-
-//             return {
-//                 complaintId: complaint._id,
-//                 title: complaint.title,
-//                 category: complaint.category,
-//                 status: complaint.status,
-//                 priority: complaint.priority,
-//                 user: complaint.user,
-//                 assignedTo: complaint.assignedTo,
-//                 lastMessage: lastMessage ? {
-//                     text: lastMessage.message,
-//                     sender: lastMessage.senderId?.name,
-//                     timestamp: lastMessage.createdAt
-//                 } : null,
-//                 unreadCount,
-//                 updatedAt: complaint.updatedAt
-//             };
-//         })
-//     );
-
-//     // Sort by last message time or complaint update time
-//     conversationsWithDetails.sort((a, b) => {
-//         const timeA = a.lastMessage?.timestamp || a.updatedAt;
-//         const timeB = b.lastMessage?.timestamp || b.updatedAt;
-//         return new Date(timeB) - new Date(timeA);
-//     });
-
-//     // Get total unread count
-//     const totalUnread = conversationsWithDetails.reduce((sum, conv) => sum + conv.unreadCount, 0);
-
-//     res.status(200).json(
-//         new ApiResponse(200, {
-//             conversations: conversationsWithDetails,
-//             totalUnread,
-//             totalConversations: conversationsWithDetails.length
-//         }, "Conversations fetched successfully")
-//     );
-// });
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server error" });
+  }
+};
 
 // ==================== GET ALL USER CONVERSATIONS (INBOX) ====================
 
-export const getAllConversations = asyncHandler(async (req, res) => {
+export const getAllConversations = async (req, res) => {
+  try {
     let userId, userModel;
 
     if (req.user) {
@@ -315,7 +226,7 @@ export const getAllConversations = asyncHandler(async (req, res) => {
         userId = req.admin._id;
         userModel = 'Admin';
     } else {
-        throw new ApiError(401, "Unauthorized");
+        return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     let complaints;
@@ -360,7 +271,7 @@ export const getAllConversations = asyncHandler(async (req, res) => {
                 })
             ]);
 
-            // 🚀 THE FIX: If there are no messages, return null so we can filter it out of the inbox
+            //  If there are no messages, return null so we can filter it out of the inbox
             if (!lastMessage) return null;
 
             return {
@@ -383,7 +294,7 @@ export const getAllConversations = asyncHandler(async (req, res) => {
         })
     );
 
-    // 🚀 THE FIX: Filter out all the nulls (tickets with no chats)
+    //  Filter out all the nulls (tickets with no chats)
     const activeConversations = conversationsWithDetails.filter(conv => conv !== null);
 
     // Sort by last message time
@@ -397,23 +308,29 @@ export const getAllConversations = asyncHandler(async (req, res) => {
     const totalUnread = activeConversations.reduce((sum, conv) => sum + conv.unreadCount, 0);
 
     res.status(200).json(
-        new ApiResponse(200, {
+        { success: true, message: "Conversations fetched successfully", data: {
             conversations: activeConversations,
             totalUnread,
             totalConversations: activeConversations.length
-        }, "Conversations fetched successfully")
+        } }
     );
-});
+
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server error" });
+  }
+};
 
 // ==================== GET UNREAD COUNT ====================
 
-export const getUnreadCount = asyncHandler(async (req, res) => {
+export const getUnreadCount = async (req, res) => {
+  try {
     let userId;
 
     if (req.user) userId = req.user._id;
     else if (req.staff) userId = req.staff._id;
     else if (req.admin) userId = req.admin._id;
-    else throw new ApiError(401, "Unauthorized");
+    else return res.status(401).json({ success: false, message: "Unauthorized" });
 
     const unreadCount = await ChatMessage.countDocuments({
         receiverId: userId,
@@ -421,20 +338,26 @@ export const getUnreadCount = asyncHandler(async (req, res) => {
     });
 
     res.status(200).json(
-        new ApiResponse(200, { unreadCount }, "Unread count fetched successfully")
+        { success: true, message: "Unread count fetched successfully", data: { unreadCount } }
     );
-});
+
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server error" });
+  }
+};
 
 // ==================== MARK AS READ ====================
 
-export const markAsRead = asyncHandler(async (req, res) => {
+export const markAsRead = async (req, res) => {
+  try {
     const { complaintId } = req.params;
     
     let userId;
     if (req.user) userId = req.user._id;
     else if (req.staff) userId = req.staff._id;
     else if (req.admin) userId = req.admin._id;
-    else throw new ApiError(401, "Unauthorized");
+    else return res.status(401).json({ success: false, message: "Unauthorized" });
 
     const conversationId = `complaint_${complaintId}`;
 
@@ -448,27 +371,33 @@ export const markAsRead = asyncHandler(async (req, res) => {
     );
 
     res.status(200).json(
-        new ApiResponse(200, {
+        { success: true, message: "Messages marked as read", data: {
             messagesMarked: result.modifiedCount
-        }, "Messages marked as read")
+        } }
     );
-});
+
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server error" });
+  }
+};
 
 // ==================== EDIT MESSAGE ====================
 
-export const editMessage = asyncHandler(async (req, res) => {
+export const editMessage = async (req, res) => {
+  try {
     const { messageId } = req.params;
     const { message } = req.body;
 
     if (!message) {
-        throw new ApiError(400, "Message content is required");
+        return res.status(400).json({ success: false, message: "Message content is required" });
     }
 
     let userId;
     if (req.user) userId = req.user._id;
     else if (req.staff) userId = req.staff._id;
     else if (req.admin) userId = req.admin._id;
-    else throw new ApiError(401, "Unauthorized");
+    else return res.status(401).json({ success: false, message: "Unauthorized" });
 
     const chatMessage = await ChatMessage.findOne({
         _id: messageId,
@@ -476,7 +405,7 @@ export const editMessage = asyncHandler(async (req, res) => {
     });
 
     if (!chatMessage) {
-        throw new ApiError(404, "Message not found or you don't have permission to edit");
+        return res.status(404).json({ success: false, message: "Message not found or you don't have permission to edit" });
     }
 
     chatMessage.message = message;
@@ -493,13 +422,19 @@ export const editMessage = asyncHandler(async (req, res) => {
     }
 
     res.status(200).json(
-        new ApiResponse(200, { message: chatMessage }, "Message edited successfully")
+        { success: true, message: "Message edited successfully", data: { message: chatMessage } }
     );
-});
+
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server error" });
+  }
+};
 
 // ==================== DELETE MESSAGE ====================
 
-export const deleteMessage = asyncHandler(async (req, res) => {
+export const deleteMessage = async (req, res) => {
+  try {
     const { messageId } = req.params;
 
     let userId, userModel;
@@ -513,7 +448,7 @@ export const deleteMessage = asyncHandler(async (req, res) => {
         userId = req.admin._id;
         userModel = 'Admin';
     } else {
-        throw new ApiError(401, "Unauthorized");
+        return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     const chatMessage = await ChatMessage.findOne({
@@ -522,7 +457,7 @@ export const deleteMessage = asyncHandler(async (req, res) => {
     });
 
     if (!chatMessage) {
-        throw new ApiError(404, "Message not found or you don't have permission to delete");
+        return res.status(404).json({ success: false, message: "Message not found or you don't have permission to delete" });
     }
 
     // Soft delete - add to deletedBy array
@@ -541,17 +476,23 @@ export const deleteMessage = asyncHandler(async (req, res) => {
     }
 
     res.status(200).json(
-        new ApiResponse(200, null, "Message deleted successfully")
+        { success: true, message: "Message deleted successfully", data: null }
     );
-});
+
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server error" });
+  }
+};
 
 // ==================== UPLOAD FILE IN CHAT ====================
 
-export const uploadChatFile = asyncHandler(async (req, res) => {
+export const uploadChatFile = async (req, res) => {
+  try {
     const { complaintId } = req.body;
     
     if (!req.file) {
-        throw new ApiError(400, "No file uploaded");
+        return res.status(400).json({ success: false, message: "No file uploaded" });
     }
 
     // Here you would upload to Cloudinary
@@ -588,13 +529,19 @@ export const uploadChatFile = asyncHandler(async (req, res) => {
     }
 
     res.status(201).json(
-        new ApiResponse(201, { message: chatMessage, fileUrl }, "File uploaded successfully")
+        { success: true, message: "File uploaded successfully", data: { message: chatMessage, fileUrl } }
     );
-});
+
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server error" });
+  }
+};
 
 // ==================== TYPING INDICATOR ====================
 
-export const sendTypingIndicator = asyncHandler(async (req, res) => {
+export const sendTypingIndicator = async (req, res) => {
+  try {
     const { complaintId, isTyping } = req.body;
 
     let userId, userName;
@@ -620,17 +567,23 @@ export const sendTypingIndicator = asyncHandler(async (req, res) => {
     }
 
     res.status(200).json(
-        new ApiResponse(200, null, "Typing indicator sent")
+        { success: true, message: "Typing indicator sent", data: null }
     );
-});
+
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server error" });
+  }
+};
 
 // ==================== SEARCH MESSAGES ====================
 
-export const searchMessages = asyncHandler(async (req, res) => {
+export const searchMessages = async (req, res) => {
+  try {
     const { query, complaintId } = req.query;
 
     if (!query) {
-        throw new ApiError(400, "Search query is required");
+        return res.status(400).json({ success: false, message: "Search query is required" });
     }
 
     let userId;
@@ -667,9 +620,14 @@ export const searchMessages = asyncHandler(async (req, res) => {
         .lean();
 
     res.status(200).json(
-        new ApiResponse(200, { messages, count: messages.length }, "Search completed")
+        { success: true, message: "Search completed", data: { messages, count: messages.length } }
     );
-});
+
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server error" });
+  }
+};
 
 // ==================== HELPER FUNCTIONS ====================
 
@@ -705,7 +663,7 @@ async function getConversationParticipants(complaint) {
     }
 
     // Admins are implicit participants (can join any conversation)
-    const admins = await Admin.find({ role: { $in: ['admin', 'superadmin'] } })
+    const admins = await Admin.find({ role: 'admin' })
         .select('name email profileImage')
         .limit(5)
         .lean();
